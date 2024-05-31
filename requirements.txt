@@ -1,0 +1,8 @@
+opencv-python
+mediapipe
+pandas
+numpy
+tqdm
+scikit-image
+matplotlib
+pillow
