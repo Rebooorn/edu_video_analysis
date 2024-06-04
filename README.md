@@ -1,4 +1,4 @@
-# Facial and hand detection
+# Facial and hand expression detection
 
 In this project, we will design a pipeline to:  
 1. detect the face/hand keypoints in each frame of a video.
