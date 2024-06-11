@@ -6,6 +6,8 @@ from homography_utils import warp_pt, solve_H
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from pathlib import Path
+
 
 mp_holistic = mp.solutions.holistic
 
@@ -68,7 +70,7 @@ def cli_detect_main(face_csv):
         # [135.0, 90.0]
     ], dtype=np.float32)
 
-    face_exp = [0,]
+    face_exp = []
     head_exp = [0,]
     face_mesh_src_last = None
     face_mesh_warp_last = None
@@ -124,6 +126,7 @@ def load_face_keypoints(face_csv):
 
 def cli_face_detect(args):
     face_csv = args.time_series_csv
+    face_csv = Path(face_csv)
     fpsm = args.fps_multiplier          # base fps is 30
 
     clip = [args.clip_time_start, args.clip_time_end]
@@ -138,89 +141,106 @@ def cli_face_detect(args):
         # [135.0, 90.0]
     ], dtype=np.float32)
 
-    face_exp = [0,]
-    face_mesh_src_last = None
+    face_exp = []
     face_mesh_warp_last = None
     # for i in tqdm(range(1000)):
-    t = time[::fpsm]
+    t = time.to_list()
+    # print(min(t), max(t))
+    # t = t[::fpsm]
 
     # clip out the region of interest
-    face_mesh = face_mesh[t > clip[0] and t < clip[1]]
-    t = t[t > clip[0] and t < clip[1]]
-    left_eye_outer = left_eye_outer[t > clip[0] and t < clip[1]]
-    right_eye_outer = right_eye_outer[t > clip[0] and t < clip[1]]
-    mouth_left = mouth_left[t > clip[0] and t < clip[1]]
-    mouth_right = mouth_right[t > clip[0] and t < clip[1]]
-
-    for i in range(0, len(face_mesh), fpsm):
+    # print(t)
+    clip_ = np.logical_and([i > clip[0] for i in t], [i < clip[1] for i in t])
+    # print(clip_)
+    # print(len(face_mesh[0]))
+    face_mesh = [p.clip(clip_) for p in face_mesh]
+    # print(len(face_mesh[0]))
+    t = np.array(t)[clip_]
+    # print(min(t), max(t))
+    left_eye_outer = left_eye_outer.clip(clip_)
+    right_eye_outer = right_eye_outer.clip(clip_)
+    mouth_left = mouth_left.clip(clip_)
+    mouth_right = mouth_right.clip(clip_)
+    tt = []
+    for i in range(0, len(face_mesh[0]), fpsm):
         src = np.array([
                 left_eye_outer[i],
+
                 right_eye_outer[i],
                 mouth_right[i],
                 mouth_left[i],
                 # nose[i]
             ], dtype=np.float32)
+        # print(src)
         H = solve_H(src, ref)
         face_mesh_warp = [warp_pt(p[i], H) for p in face_mesh]
-        if face_mesh_src_last is not None:
+        # print(face_mesh_warp)
+        if face_mesh_warp_last is not None:
             face_exp_ = measure_face_expression(face_mesh_warp, face_mesh_warp_last)
             face_exp.append(face_exp_)
+            tt.append(t[i])
         face_mesh_warp_last = face_mesh_warp
+        # print(i, face_exp, tt)
 
     # print(face_exp)
     # fig, axs = plt.subplots(1,2, figsize=[16,4])
-    plt.plot(t, face_exp)
+    # print(len(tt))
+    plt.plot(tt, face_exp)
     # axs[1].plot(t, head_exp)
     plt.title('{} face expression'.format(face_csv.name.replace('_face.csv', '')))
     plt.tight_layout()
-    # plt.savefig('./video_outputs/plots/{}'.format(face_csv.name.replace('_face.csv', '_face.png')))
-    plt.show()
+    plt.savefig('./video_outputs/plots/{}'.format(face_csv.name.replace('_face.csv', '_face.png')))
+    # plt.show()
     vname = face_csv.name.replace('_face.csv', '')
     mean_face_exp = np.nanmean(face_exp)
-    print('{},{}'.format(vname, mean_face_exp))
+    # print('{},{}'.format(vname, mean_face_exp))
     plt.close()
+
+    return vname, mean_face_exp
 
 
 def cli_head_detect(args):
     face_csv = args.time_series_csv
+    face_csv = Path(face_csv)
     fpsm = args.fps_multiplier          # base fps is 30
 
     clip = [args.clip_time_start, args.clip_time_end]
 
     time, face_mesh, left_eye_outer, right_eye_outer, mouth_left, mouth_right = load_face_keypoints(face_csv)
 
-    head_exp = [0,]
-    t = time[::fpsm]
-
+    head_exp = []
+    t = time.to_list()
+    # t = time[::fpsm]
+    clip_ = np.logical_and([i > clip[0] for i in t], [i < clip[1] for i in t])
     # clip out the region of interest
-    face_mesh = face_mesh[t > clip[0] and t < clip[1]]
-    t = t[t > clip[0] and t < clip[1]]
-    left_eye_outer = left_eye_outer[t > clip[0] and t < clip[1]]
-    right_eye_outer = right_eye_outer[t > clip[0] and t < clip[1]]
-    mouth_left = mouth_left[t > clip[0] and t < clip[1]]
-    mouth_right = mouth_right[t > clip[0] and t < clip[1]]
-
-    for i in range(0, len(face_mesh), fpsm):
+    face_mesh = [p.clip(clip_) for p in face_mesh]
+    t = np.array(t)[clip_]
+    # t = t[t > clip[0] and t < clip[1]]
+    tt = []
+    face_mesh_src_last = None
+    for i in range(0, len(face_mesh[0]), fpsm):
 
         face_mesh_src = [p[i] for p in face_mesh]
         if face_mesh_src_last is not None:
             head_exp_ = measure_head_expression(face_mesh_src, face_mesh_src_last)
             head_exp.append(head_exp_)
+            tt.append(t[i])
         face_mesh_src_last = face_mesh_src
 
     # print(face_exp)
     # fig, axs = plt.subplots(1,2, figsize=[16,4])
     # axs[0].plot(t, face_exp)
-    plt.plot(t, head_exp)
+    plt.plot(tt, head_exp)
     plt.title('{} head expression'.format(face_csv.name.replace('_face.csv', '')))
     # plt.show()
     plt.tight_layout()
-    # plt.savefig('./video_outputs/plots/{}'.format(face_csv.name.replace('_face.csv', '_head.png')))
-    plt.show()
+    plt.savefig('./video_outputs/plots/{}'.format(face_csv.name.replace('_face.csv', '_head.png')))
+    # plt.show()
     vname = face_csv.name.replace('_face.csv', '')
     mean_head_exp = np.nanmean(head_exp)
-    print('{},{}'.format(vname, mean_head_exp))
+    # print('{},{}'.format(vname, mean_head_exp))
     plt.close()
+    return vname, mean_head_exp
 
 def cli_finger_detect(args):
     pass
@@ -228,23 +248,13 @@ def cli_finger_detect(args):
 def cli_hand_detect(args):
     pass
 
-if __name__ == '__main__':
-    # get_truncated_face_connections(mp_holistic.FACEMESH_TESSELATION)
-    # face_csv = r'video_outputs\T4_CXY_en_face.csv'
-    # cli_detect_main(face_csv)
-
-    from pathlib import Path
-    face_csvs = Path(r'./video_outputs').glob('*_face.csv')
-    face_csvs = list(face_csvs)
-    for f in face_csvs:
-        cli_detect_main(f)
-
+def cli_main():
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
     parser.add_argument('-tsc', '--time-series-csv', type=str, required=True)
     parser.add_argument('-fm', '--fps_multiplier', type=int, default=1)
-    parser.add_argument('-cts', '--clip-time-start', type=float, default=0)
+    parser.add_argument('-cts', '--clip-time-start', type=float, default=0)         # in second
     parser.add_argument('-cte', '--clip-time-end', type=float, default=10000)
     parser.add_argument('--face', action='store_true', default=False)
     parser.add_argument('--head', action='store_true', default=False)
@@ -253,9 +263,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.face:
-        cli_face_detect(args)
+        vname, metric = cli_face_detect(args)
+        return vname, metric
     if args.head:
-        cli_head_detect(args)
+        vname, metric = cli_head_detect(args)
+        return vname, metric
     if args.finger:
         cli_finger_detect(args)
     if args.hand:
@@ -263,4 +275,37 @@ if __name__ == '__main__':
     else:
         ValueError('Unrecognized mode, ethier --face, --head, --finger or --hand.')
 
-    
+
+if __name__ == '__main__':
+    # cli_main()
+
+    # face_csv = r'video_outputs\T4_CXY_en_face.csv'
+    # cli_detect_main(face_csv)
+
+    from argparse import Namespace
+    from pathlib import Path
+    import json
+    from utils import convert_time_to_seconds
+
+    face_csvs = Path(r'./video_outputs').glob('*_face.csv')
+    face_csvs = list(face_csvs)
+
+    # load video clip info
+    with open('video_clip.json', 'r') as f:
+        video_clip_dict = json.load(f)
+
+    for f in face_csvs:
+        vname = str(f).split('_face')[0]
+        args = Namespace()
+        args.time_series_csv = f
+        args.fps_multiplier = 15
+        if vname in video_clip_dict.keys():
+            args.clip_time_start = convert_time_to_seconds(video_clip_dict[vname].split('/')[0])
+            args.clip_time_end = convert_time_to_seconds(video_clip_dict[vname].split('/')[1])
+        else:
+            args.clip_time_start = 0
+            args.clip_time_end = 10000
+        vname, face_exp = cli_face_detect(args)
+        vname, head_exp = cli_head_detect(args)
+        print(f'{vname},{face_exp},{head_exp}')
+   

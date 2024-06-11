@@ -1,2 +1,4 @@
 videos/*
 video_outputs/*
+video_debug/*
+*.pyc

@@ -184,9 +184,60 @@ def plot_face(csv_file, face_csv, fps=30, framesize=[270, 180]):
         # plt.show()
 
 
+def plot_hand(hand_csv, framesize=[270,180]):
+    from utils import markershands, load_hand_mesh
+
+    def get_init_hand_plot(ax):
+        hand_mesh_plot = []
+        for i in range(21):
+            hand_mesh_plot.append(ax.plot([], [], 'r-')[0])
+        return hand_mesh_plot
+
+    def update_hand_mesh(hand_plot, pts, connections):
+        for i in range(len(hand_plot)):
+            plot_line(hand_plot[i], pts[connections[i][0]], pts[connections[i][1]])
+
+    # print(len(markershands))
+    df = pd.read_csv(hand_csv)
+    time = df['time']               # ms
+    time = time / 1000              # s
+    print(df.columns)
+    hand_mesh = load_hand_mesh(df, framesize)
+    left_hand_mesh = hand_mesh[:21]
+    right_hand_mesh = hand_mesh[21:]
+    
+    plt.ion()
+
+    hand_mesh_connections = list(mp_holistic.HAND_CONNECTIONS)
+    # print(len(hand_mesh_connections))
+    # for i in range(1000):
+    fig, ax = plt.subplots(1,2, figsize=(10,4))
+    left_hand_plot = get_init_hand_plot(ax[0])
+    right_hand_plot = get_init_hand_plot(ax[0])
+
+    # print(left_hand_mesh[0][:10])
+    for i in range(2):
+        ax[i].set_xlim(0,framesize[0])
+        ax[i].set_ylim(0,framesize[1])
+        ax[i].invert_yaxis()
+        ax[i].invert_xaxis()
+
+    for i in range(1000):
+    # for i in range(len(time)):
+        left_hand_pts = [p[i] for p in left_hand_mesh]
+        right_hand_pts = [p[i] for p in right_hand_mesh]
+        update_hand_mesh(left_hand_plot, left_hand_pts, hand_mesh_connections)
+        update_hand_mesh(right_hand_plot, right_hand_pts, hand_mesh_connections)
+        ax[0].set_title('time = {}s'.format(str(time[i])[:4]))
+        print(left_hand_pts[0], right_hand_pts[0])
+        plt.draw()
+        plt.pause(0.1)
+
 
 if __name__ == '__main__':
     csv_file = r'video_outputs\T4_CXY_en_body.csv'
     face_csv = r'video_outputs\T4_CXY_en_face.csv'
-    plot_face(csv_file, face_csv)
+    hand_csv = r'video_outputs\T4_CXY_en_hands.csv'
+    # plot_face(csv_file, face_csv)
+    plot_hand(hand_csv)
 
