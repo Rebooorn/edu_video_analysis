@@ -196,7 +196,7 @@ def cli_face_detect(args):
     # print('{},{}'.format(vname, mean_face_exp))
     plt.close()
 
-    return vname, mean_face_exp
+    return vname, mean_face_exp, tt, face_exp
 
 
 def cli_head_detect(args):
@@ -240,7 +240,7 @@ def cli_head_detect(args):
     mean_head_exp = np.nanmean(head_exp)
     # print('{},{}'.format(vname, mean_head_exp))
     plt.close()
-    return vname, mean_head_exp
+    return vname, mean_head_exp, tt, head_exp
 
 def cli_finger_detect(args):
     pass
@@ -305,7 +305,7 @@ if __name__ == '__main__':
         else:
             args.clip_time_start = 0
             args.clip_time_end = 10000
-        vname, face_exp = cli_face_detect(args)
-        vname, head_exp = cli_head_detect(args)
+        vname, face_exp, _, _= cli_face_detect(args)
+        vname, head_exp, _, _ = cli_head_detect(args)
         print(f'{vname},{face_exp},{head_exp}')
    
