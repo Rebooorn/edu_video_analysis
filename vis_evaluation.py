@@ -25,7 +25,7 @@ class evaluation_worker:
         print('Loading face and head expression curve')
         _, _, self.tt, self.face_exp = cli_face_detect(args)
         _, _, self.tt, self.head_exp = cli_head_detect(args)
-        self.image_size = [549, 360]
+        self.image_size = [540, 360]
         self.canvas_size = [800, 360]
         # print(self.face_exp)
         self.face_exp = np.array(self.face_exp)
