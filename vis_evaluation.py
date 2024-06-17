@@ -128,9 +128,26 @@ class evaluation_worker:
             self.image.image_tk = image_tk
 
     def preload_frames(self):
-        # load all frames according to the fpsm
+        # load all frames according to the fpsm, which can be faster
+        self.frames = []
+        nframe = 0
+        print('Loading frames')
+        while True:
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+            
+            if (nframe - 1)  % self.fpsm == 0:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+                # Convert the frame to an image object
+                image = Image.fromarray(frame)
+                image = image.resize(self.image_size)
+                image_tk = ImageTk.PhotoImage(image)
+                self.frames.append(image_tk)
 
-        pass
+            nframe = nframe + 1
+        self.cap.release()
 
 # Create the main window
 
