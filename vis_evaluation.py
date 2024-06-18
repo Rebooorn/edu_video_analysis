@@ -14,9 +14,10 @@ class evaluation_worker:
         self.root.title("expression extraction")
         self.slice = 0
 
-        self.cap = cv2.VideoCapture(r'./videos/T1_CZY_2_en.mp4')
+        vid = r'T4_TYC_en'
+        self.cap = cv2.VideoCapture(r'./videos/{}.mp4'.format(vid))
         args = Namespace()
-        args.time_series_csv = r'./video_outputs/T1_CZY_2_en_face.csv'
+        args.time_series_csv = r'./video_outputs/{}_face.csv'.format(vid)
         args.fps_multiplier = 30
         args.clip_time_start = 0
         args.clip_time_end = 10000
@@ -42,6 +43,9 @@ class evaluation_worker:
         print(self.total_frames, len(self.frames))
 
         self.autoplay = True
+
+        self.fval = 0
+        self.hval = 0
 
         # Create image widget
         self.image = tk.Canvas(self.root, width=self.image_size[0], height=self.image_size[1], bg="white")
@@ -96,7 +100,9 @@ class evaluation_worker:
     def update_time(self):
         time = self.slice / 100 * self.total_frames
         time = self.tt[int(time)]
-        self.time_text.set(str(time)[:5]+'s')
+        fval = str(self.fval)[:5]
+        hval = str(self.hval)[:5]
+        self.time_text.set('{} s, fval={}, hval={}'.format(str(time)[:5], fval, hval))
         
 
     def auto_next_frame(self):
@@ -192,6 +198,8 @@ class evaluation_worker:
         r = 3
         curve_indicator = canvas.create_oval(x_norm[ind]-r, y_norm[ind]-r,x_norm[ind]+r, y_norm[ind]+r,fill='red')
         # print(self.curve_indicator)
+        self.fval = self.face_exp[ind]
+        self.hval = self.head_exp[ind]
         return curve_indicator
 
     def update_frame(self, prog):
