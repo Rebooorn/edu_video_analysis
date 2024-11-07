@@ -6,7 +6,10 @@ import cv2
 from detect_utils import cli_face_detect, cli_head_detect
 from argparse import Namespace
 from time import sleep
-
+import json
+from utils import convert_time_to_seconds
+from homography_utils import warp_img, warp_pt
+from plot_utils import paint_line
 
 class evaluation_worker:
     def __init__(self) -> None:
@@ -14,20 +17,38 @@ class evaluation_worker:
         self.root.title("expression extraction")
         self.slice = 0
 
-        vid = r'T4_TYC_en'
+        vid = r'T1_HJH_en'
         self.cap = cv2.VideoCapture(r'./videos/{}.mp4'.format(vid))
         args = Namespace()
         args.time_series_csv = r'./video_outputs/{}_face.csv'.format(vid)
-        args.fps_multiplier = 30
-        args.clip_time_start = 0
-        args.clip_time_end = 10000
+        args.fps_multiplier = 60
 
+        with open('video_clip.json', 'r') as f:
+            video_clip_dict = json.load(f)
+
+        if vid in video_clip_dict.keys():
+            args.clip_time_start = convert_time_to_seconds(video_clip_dict[vid].split('/')[0])
+            args.clip_time_end = convert_time_to_seconds(video_clip_dict[vid].split('/')[1])
+        else:
+            args.clip_time_start = 0            # sec
+            args.clip_time_end = 10000
+
+        print('Video clip from {} to {} s'.format(args.clip_time_start, args.clip_time_end))
         self.fpsm = args.fps_multiplier
         print('Loading face and head expression curve')
-        _, _, self.tt, self.face_exp = cli_face_detect(args)
+
+        _, ret_face, self.tt, self.face_exp = cli_face_detect(args)
+        self.ret_face_mesh = ret_face[3]
+        self.ret_H = ret_face[4]
+        self.ret_face_mesh_warp = ret_face[5]
+
+        # print(len(self.tt), len(self.face_exp))
         _, _, self.tt, self.head_exp = cli_head_detect(args)
-        self.image_size = [540, 360]
-        self.canvas_size = [800, 360]
+        # print(len(self.tt), len(self.head_exp))
+        # self.image_size = [540, 360]
+        # self.canvas_size = [800, 360]
+        self.image_size = [270, 180]
+        self.canvas_size = [400, 180]
         # print(self.face_exp)
         self.face_exp = np.array(self.face_exp)
         self.head_exp = np.array(self.head_exp)
@@ -35,7 +56,8 @@ class evaluation_worker:
         self.face_exp = np.nan_to_num(self.face_exp, nan=0.0)
         self.head_exp = np.nan_to_num(self.head_exp, nan=0.0)
         # print(self.face_exp.max())
-        self.preload_frames(args.fps_multiplier)            # all frames are now in self.frames
+        # args.fps_multiplier = 10
+        self.preload_frames(args.fps_multiplier, args)            # all frames are now in self.frames
 
         self.total_frames = len(self.tt)
 
@@ -52,15 +74,21 @@ class evaluation_worker:
         self.image.create_image(0, 0, anchor=tk.NW, image=self.frames[0])
         self.image.grid(row=0, column=0, padx=10, pady=10)
 
+        # create a image widget to show homography
+        self.hm_image = tk.Canvas(self.root, width=self.image_size[0], height=self.image_size[1], bg="white")
+        # hm_image = 
+        self.hm_image.create_image(0, 0, anchor=tk.NW, image=self.frames[0])
+        self.hm_image.grid(row=1, column=0, padx=10, pady=10)
+
         # create label to show time
         self.time_text = tk.StringVar(value='Start')
         self.label = tk.Label(self.root, textvariable=self.time_text, font=("Helvetica", 16))
-        self.label.grid(row=1, column=0, padx=10, pady=10)
+        self.label.grid(row=3, column=1, padx=10, pady=10)
 
         # image_label2 = tk.Label(self.root, image=tk_image2)
-        self.canvas1 = tk.Canvas(self.root, width=self.canvas_size[0], height=self.canvas_size[1], bg="white")      
+        self.canvas1 = tk.Canvas(self.root, width=self.canvas_size[0], height=self.canvas_size[1], bg="white")          # fval
         self.canvas1.grid(row=0, column=1, padx=10, pady=10)
-        self.canvas2 = tk.Canvas(self.root, width=self.canvas_size[0], height=self.canvas_size[1], bg="white")      
+        self.canvas2 = tk.Canvas(self.root, width=self.canvas_size[0], height=self.canvas_size[1], bg="white")          # hval
         self.canvas2.grid(row=1, column=1, padx=10, pady=10)
 
         # Create a slider
@@ -104,7 +132,6 @@ class evaluation_worker:
         hval = str(self.hval)[:5]
         self.time_text.set('{} s, fval={}, hval={}'.format(str(time)[:5], fval, hval))
         
-
     def auto_next_frame(self):
         if self.autoplay:
             self.update_time()
@@ -133,18 +160,17 @@ class evaluation_worker:
     # Function to handle slider change
     def on_slider_change(self, slice):
         self.slice = float(slice)
-        print(f"Slider value: {self.slice} %")
         self.face_exp_indicator = self.update_curve(self.face_x_norm, self.face_y_norm, self.canvas1, self.face_exp_indicator)
         self.head_exp_indicator = self.update_curve(self.head_x_norm, self.head_y_norm, self.canvas2, self.head_exp_indicator)
         self.update_frame(self.slice)
         self.update_time()
+        print(f"Slider value: {self.slice} %")
 
     # Function to draw the sine curve on the canvas
     def draw_face_curve_debug(self, width=270, height=180):
         # Generate data points for the sine curve
         x = np.linspace(0, 4 * np.pi, 1000)  
         y = np.sin(x)                        # y values as sin(x)
-
         r=3
 
         # Normalize data to fit the canvas
@@ -168,6 +194,8 @@ class evaluation_worker:
         y_norm = (1 - (y - y.min()) / (y.max() - y.min())) * height  # Invert y-axis for Tkinter
         # print(y.max(), y.min())
         # Draw the curve on the canvas
+        # i=0
+        # print(x_norm[i], y_norm[i], x_norm[i + 1], y_norm[i + 1])
         for i in range(len(x_norm) - 1):
             canvas.create_line(x_norm[i], y_norm[i], x_norm[i + 1], y_norm[i + 1], fill="blue")
         
@@ -208,6 +236,9 @@ class evaluation_worker:
         self.image.create_image(0, 0, anchor=tk.NW, image=self.frames[self.frame_number])
         self.image.image_tk = self.frames[self.frame_number]
 
+        # also update the hm_image
+        self.hm_image.create_image(0, 0, anchor=tk.NW, image=self.hm_frames[self.frame_number])
+        self.hm_image.image_tk = self.hm_frames[self.frame_number]
         # self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
         # ret, frame = self.cap.read()
         # if ret:
@@ -224,27 +255,55 @@ class evaluation_worker:
         #     self.image.create_image(0, 0, anchor=tk.NW, image=image_tk)
         #     self.image.image_tk = image_tk
 
-    def preload_frames(self, fpsm):
+    def preload_frames(self, fpsm, args):
         # load all frames according to the fpsm, which can be faster
         self.frames = []
+        self.hm_frames = []
         nframe = 0
+        idx = 0
+        t = -0.033333
+
+        print(len(self.ret_H))
         print('Loading frames...')
         while True:
             ret, frame = self.cap.read()
             if not ret:
                 break
             
-            if (nframe - 1)  % fpsm == 0:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-                # Convert the frame to an image object
-                image = Image.fromarray(frame)
-                image = image.resize(self.image_size)
-                image_tk = ImageTk.PhotoImage(image)
-                self.frames.append(image_tk)
+            if t > args.clip_time_start and t < args.clip_time_end:
+                if nframe % fpsm == 0:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    # print(t)
+                    # Convert the frame to an image object
+                    image = Image.fromarray(frame)
+                    image = image.resize(self.image_size)
+                    image = np.array(image)
+                    if idx+1 < len(self.ret_H):
+                        hm_image = warp_img(np.array(image), self.ret_H[idx])
 
-            nframe = nframe + 1
+                        # TODO: also paint the points?
+                        for p, hp in zip(self.ret_face_mesh[idx], self.ret_face_mesh_warp[idx]):
+                            # print(p)
+                            # check whether nan in p and hp
+                            if np.isnan(np.min(p)) or np.isnan(np.min(hp)):
+                                continue
+
+                            p = [int(i) for i in p]
+                            hp = [int(i) for i in hp]
+                            image = paint_line(image, p, p)
+                            hm_image = paint_line(hm_image, hp, hp)
+
+                        image_tk = ImageTk.PhotoImage(Image.fromarray(image))
+                        hm_image_tk = ImageTk.PhotoImage(Image.fromarray(hm_image))
+                        self.frames.append(image_tk)
+                        self.hm_frames.append(hm_image_tk)
+                    idx = idx + 1
+                nframe = nframe + 1
+                # print(idx)
+            t += 0.033333
+
         self.cap.release()
+        print('Done.')
 
 # Create the main window
 

@@ -74,6 +74,25 @@ def cli_debug(args):
 
 #initialize modules and functions
 
+def cli_save_video():
+    vfile = r'./videos/T4_CXY_en.mp4'
+    capture = cv2.VideoCapture(vfile) #load in the videocapture
+    n = 0
+    while (True):
+        ret, image = capture.read() #read frame
+        if ret == True: #if there is a frame
+            # image_ = resize(image, output_shape=(180, 270)) * 255
+            # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) #make sure the image is in RGB format
+            # original_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            # cv2.imshow("resizedimage", image)
+            image_ = resize(image, output_shape=(180, 270)) * 255
+            cv2.imwrite(f'./video_outputs/frames/{n}.jpg', image_.astype(np.uint8))
+            # cv2.imwrite(f'./video_outputs/frames/{n}.jpg', image)
+        n += 1
+        if n == 1000:
+            break
+    print('done')
+    
 
 
 def cli_mp_main(args):
@@ -248,14 +267,16 @@ def cli_mp_main(args):
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    # parser.add_argument('-mp', '--mypath', type=str, default='./videos')
-    parser.add_argument('-vf', '--vfile', type=str, required=True)
-    # parser.add_argument('-if', '--ifolder', type=str, default='./videos')
-    parser.add_argument('-of', '--outputf_ts', type=str, default='./video_outputs')
-    parser.add_argument('--debug', action='store_true', default=False)
-    parser.add_argument('-sv', '--save-video', action='store_true', default=False)
-    parser.add_argument('-v', '--verbose', action='store_true', default=False)
-    args = parser.parse_args()
+    cli_save_video()
 
-    cli_mp_main(args)
+    # parser = ArgumentParser()
+    # # parser.add_argument('-mp', '--mypath', type=str, default='./videos')
+    # parser.add_argument('-vf', '--vfile', type=str, required=True)
+    # # parser.add_argument('-if', '--ifolder', type=str, default='./videos')
+    # parser.add_argument('-of', '--outputf_ts', type=str, default='./video_outputs')
+    # parser.add_argument('--debug', action='store_true', default=False)
+    # parser.add_argument('-sv', '--save-video', action='store_true', default=False)
+    # parser.add_argument('-v', '--verbose', action='store_true', default=False)
+    # args = parser.parse_args()
+
+    # cli_mp_main(args)

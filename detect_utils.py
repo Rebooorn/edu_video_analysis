@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from pathlib import Path
+from copy import deepcopy
 
 
 mp_holistic = mp.solutions.holistic
@@ -32,7 +33,6 @@ def measure_point_speed(pts: list):
     return sp
 
 # detection func of face/head/hand/finger expression
-
 
 def l2_distance(p1, p2):
     return np.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
@@ -127,6 +127,7 @@ def load_face_keypoints(face_csv):
 def cli_face_detect(args):
     face_csv = args.time_series_csv
     face_csv = Path(face_csv)
+    # fpsm = args.fps_multiplier          # base fps is 30
     fpsm = args.fps_multiplier          # base fps is 30
 
     clip = [args.clip_time_start, args.clip_time_end]
@@ -145,11 +146,8 @@ def cli_face_detect(args):
     face_mesh_warp_last = None
     # for i in tqdm(range(1000)):
     t = time.to_list()
-    # print(min(t), max(t))
-    # t = t[::fpsm]
 
     # clip out the region of interest
-    # print(t)
     clip_ = np.logical_and([i > clip[0] for i in t], [i < clip[1] for i in t])
     # print(clip_)
     # print(len(face_mesh[0]))
@@ -161,19 +159,24 @@ def cli_face_detect(args):
     right_eye_outer = right_eye_outer.clip(clip_)
     mouth_left = mouth_left.clip(clip_)
     mouth_right = mouth_right.clip(clip_)
-    tt = []
+    tt = []      # lst to keep the real time.
+    ret_H = []
+    ret_face_mesh = []
+    ret_face_mesh_warp = []
     for i in range(0, len(face_mesh[0]), fpsm):
         src = np.array([
                 left_eye_outer[i],
-
                 right_eye_outer[i],
                 mouth_right[i],
                 mouth_left[i],
-                # nose[i]
             ], dtype=np.float32)
         # print(src)
         H = solve_H(src, ref)
+        ret_H.append(H)
         face_mesh_warp = [warp_pt(p[i], H) for p in face_mesh]
+
+        ret_face_mesh.append([p[i] for p in face_mesh])
+        ret_face_mesh_warp.append(face_mesh_warp)
         # print(face_mesh_warp)
         if face_mesh_warp_last is not None:
             face_exp_ = measure_face_expression(face_mesh_warp, face_mesh_warp_last)
@@ -181,6 +184,7 @@ def cli_face_detect(args):
             tt.append(t[i])
         face_mesh_warp_last = face_mesh_warp
         # print(i, face_exp, tt)
+    # print(len(tt))
 
     # print(face_exp)
     # fig, axs = plt.subplots(1,2, figsize=[16,4])
@@ -192,16 +196,33 @@ def cli_face_detect(args):
     # plt.savefig('./video_outputs/plots/{}'.format(face_csv.name.replace('_face.csv', '_face.png')))
     # plt.show()
     # plt.close()
+    ratio_nan = np.sum(np.isnan(face_exp)) / face_exp
+    # average according to args.fps_multiplier
+    # ml = args.fps_multiplier
+    # l = (len(face_exp) // ml) * ml
+    # face_exp = face_exp[:l]
+    # tt = tt[:l]
+
+    # face_exp = np.array(face_exp).reshape(-1,ml)
+    # tt = np.array(tt).reshape(-1,ml)
+    # tt = tt[:,0]
+    # mean_face_exp = np.nanmean(face_exp, axis=1)
+    # max_face_exp = np.nanmax(face_exp, axis=1)
+    
     vname = face_csv.name.replace('_face.csv', '')
-    mean_face_exp = np.nanmean(face_exp)
+    # mean_face_val = np.nanmean(mean_face_exp)         # for old average implementation
+    # max_face_val = np.nanmean(max_face_exp)
+    mean_face_val = np.nanmean(face_exp)
+    max_face_val = np.nanmax(face_exp)
     # print('{},{}'.format(vname, mean_face_exp))
 
-    return vname, mean_face_exp, tt, face_exp
+    return vname, [mean_face_val, max_face_val, ratio_nan, ret_face_mesh, ret_H, ret_face_mesh_warp], tt, face_exp
 
 
 def cli_head_detect(args):
     face_csv = args.time_series_csv
     face_csv = Path(face_csv)
+    # fpsm = args.fps_multiplier          # base fps is 30
     fpsm = args.fps_multiplier          # base fps is 30
 
     clip = [args.clip_time_start, args.clip_time_end]
@@ -237,10 +258,25 @@ def cli_head_detect(args):
     # plt.savefig('./video_outputs/plots/{}'.format(face_csv.name.replace('_face.csv', '_head.png')))
     # plt.show()
     # plt.close()
+    ratio_nan = np.sum(np.isnan(head_exp)) / len(head_exp)
+    # ml = args.fps_multiplier
+    # l = (len(head_exp) // ml) * ml
+    # head_exp = head_exp[:l]
+    # tt = tt[:l]
+    # head_exp = np.array(head_exp).reshape(-1,ml)
+    # tt = np.array(tt).reshape(-1,ml)
+    # tt = tt[:,0]
+    # mean_head_exp = np.nanmean(head_exp, axis=1)
+    # max_head_exp = np.nanmax(head_exp, axis=1)
+
     vname = face_csv.name.replace('_face.csv', '')
-    mean_head_exp = np.nanmean(head_exp)
+    # mean_head_val = np.nanmean(mean_head_exp)     # for old average implementation
+    # max_head_val = np.nanmean(max_head_exp)
+    mean_head_val = np.nanmean(head_exp)
+    max_head_val = np.nanmax(head_exp)
+
     # print('{},{}'.format(vname, mean_head_exp))
-    return vname, mean_head_exp, tt, head_exp
+    return vname, [mean_head_val, max_head_val, ratio_nan], tt, head_exp
 
 def cli_finger_detect(args):
     pass
@@ -298,14 +334,14 @@ if __name__ == '__main__':
         vname = str(f).split('_face')[0]
         args = Namespace()
         args.time_series_csv = f
-        args.fps_multiplier = 15
+        args.fps_multiplier = 30
         if vname in video_clip_dict.keys():
             args.clip_time_start = convert_time_to_seconds(video_clip_dict[vname].split('/')[0])
             args.clip_time_end = convert_time_to_seconds(video_clip_dict[vname].split('/')[1])
         else:
             args.clip_time_start = 0
             args.clip_time_end = 10000
-        vname, face_exp, _, _= cli_face_detect(args)
-        vname, head_exp, _, _ = cli_head_detect(args)
-        print(f'{vname},{face_exp},{head_exp}')
-   
+        vname, [mean_fval, max_fval, r, _, _, _], _, _= cli_face_detect(args)
+        vname, [mean_hval, max_hval, r], _, _ = cli_head_detect(args)
+        print(f'{vname},{mean_fval},{max_fval},{mean_hval},{max_hval},{r}')
+        

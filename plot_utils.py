@@ -7,12 +7,16 @@ from homography_utils import solve_H, warp_img, warp_pt
 from detect_utils import get_truncated_face_connections
 import mediapipe as mp #mediapipe
 from utils import pt, load_xy_from_df, load_face_mesh, load_eye_or_mouth_mesh
-
+import cv2
 
 mp_drawing = mp.solutions.drawing_utils
 mp_holistic = mp.solutions.holistic
 mp_drawing_styles = mp.solutions.drawing_styles
 
+
+def paint_line(image, pt1, pt2):
+    cv2.line(image, tuple(pt1), tuple(pt2), (0,0,255), 2)
+    return image
 
 # useful wrappers 
 def plot_line(plot_obj, pt1, pt2):
@@ -86,7 +90,7 @@ def plot_face(csv_file, face_csv, fps=30, framesize=[270, 180]):
     # plt.show()
 
     print('loading frames')
-    images = [Image.open('./video_outputs/frames/{}.jpg'.format(i)) for i in range(5000)]
+    images = [Image.open('./video_outputs/frames/{}.jpg'.format(i)) for i in range(1000)]
     images = [np.array(i) for i in images]
     # images = [resize(i, framesize[::-1]) for i in images]
 
@@ -139,16 +143,6 @@ def plot_face(csv_file, face_csv, fps=30, framesize=[270, 180]):
         
         bg.set_data(images[i])
 
-        # plot_line(nose_, nose[i], nose[i])
-
-        # plot_line(eye1, left_eye_inner[i], left_eye[i])
-        # plot_line(eye2, left_eye_outer[i], left_eye[i])
-
-        # plot_line(eye3, right_eye_inner[i], right_eye[i])
-        # plot_line(eye4, right_eye_outer[i], right_eye[i])
-
-        # plot_line(mouth, left_mouth[i], right_mouth[i])
-        
         # map the face
         plot_circle(left_eye_lines, pts=[p[i] for p in left_eye_mesh])
         plot_circle(right_eye_lines, pts=[p[i] for p in right_eye_mesh])
@@ -238,6 +232,6 @@ if __name__ == '__main__':
     csv_file = r'video_outputs\T4_CXY_en_body.csv'
     face_csv = r'video_outputs\T4_CXY_en_face.csv'
     hand_csv = r'video_outputs\T4_CXY_en_hands.csv'
-    # plot_face(csv_file, face_csv)
-    plot_hand(hand_csv)
+    plot_face(csv_file, face_csv)
+    # plot_hand(hand_csv)
 
