@@ -10,6 +10,18 @@ import json
 from utils import convert_time_to_seconds
 from homography_utils import warp_img, warp_pt
 from plot_utils import paint_line
+from copy import deepcopy
+import os
+import shutil
+from pathlib import Path
+import json
+
+def save_png(img, fname):
+    img.save(str(fname))
+
+def save_json(data, fname):
+    with open(str(fname), "w") as file:
+        json.dump(data, file, indent=4)  # indent=4 makes the file pretty-printed
 
 class evaluation_worker:
     def __init__(self) -> None:
@@ -17,10 +29,14 @@ class evaluation_worker:
         self.root.title("expression extraction")
         self.slice = 0
 
-        vid = r'T1_HJH_en'
+        # vid = r'T1_HJH_en'
+        # vid = r'T2_HJC_en'
+        # vid = r'T3_HNS_en'
+        vid = r'T4_YJH_en'
         self.cap = cv2.VideoCapture(r'./videos/{}.mp4'.format(vid))
         args = Namespace()
         args.time_series_csv = r'./video_outputs/{}_face.csv'.format(vid)
+        self.vid = vid
         args.fps_multiplier = 60
 
         with open('video_clip.json', 'r') as f:
@@ -91,6 +107,8 @@ class evaluation_worker:
         self.canvas2 = tk.Canvas(self.root, width=self.canvas_size[0], height=self.canvas_size[1], bg="white")          # hval
         self.canvas2.grid(row=1, column=1, padx=10, pady=10)
 
+        self.show_mesh = False
+
         # Create a slider
         self.slider = ttk.Scale(self.root, from_=0, to=100, orient="horizontal", command=self.on_slider_change)
         self.slider.grid(row=2, column=0, columnspan=3, padx=10, pady=10, sticky="ew")
@@ -112,6 +130,12 @@ class evaluation_worker:
         button4 = ttk.Button(buttons_frame, text="Last", command=self.on_last_frame_button_click)
         button4.pack(side=tk.LEFT, padx=5)
 
+        button5 = ttk.Button(buttons_frame, text="Save", command=self.on_save_button_click)
+        button5.pack(side=tk.LEFT, padx=5)
+
+        button6 = ttk.Button(buttons_frame, text="DetectPts", command=self.on_detectpts_button_click)
+        button6.pack(side=tk.LEFT, padx=5)
+
         # self.x_norm, self.y_norm, self.curve_indicator = self.draw_face_curve()
         self.face_x_norm, self.face_y_norm, self.face_exp_indicator = self.draw_face_curve(width=self.canvas_size[0], height=self.canvas_size[1])
         self.head_x_norm, self.head_y_norm, self.head_exp_indicator = self.draw_head_curve(width=self.canvas_size[0], height=self.canvas_size[1])
@@ -124,6 +148,57 @@ class evaluation_worker:
         # print("Button 1 clicked")
         self.autoplay = True
         self.auto_next_frame()
+    
+    def on_save_button_click(self):
+        # when the 'save' button is clicked:
+        # 1. save the current frame, the previous frame, and the homography
+        # 2. the current f/h-val
+        # 3. the detected keypoints **overlay** the original image, and the homography
+        # 3. tag the vid and time.
+        tag = self.vid + '@'+ str(self.this_time)[:5] + 's'
+        fval = str(self.fval)[:5]
+        hval = str(self.hval)[:5]
+        det = {
+            'fval': fval,
+            'hval': hval
+        }
+
+        frame = ImageTk.getimage(self.frames[self.frame_number])
+        hm_frame = ImageTk.getimage(self.hm_frames[self.frame_number])
+        prev_frame = ImageTk.getimage(self.frames[self.frame_number-1])
+        prev_hm_frame = ImageTk.getimage(self.hm_frames[self.frame_number-1])
+
+        framePts = ImageTk.getimage(self.framesPts[self.frame_number])
+        hm_framePts = ImageTk.getimage(self.hm_framesPts[self.frame_number])
+        prev_framePts = ImageTk.getimage(self.framesPts[self.frame_number-1])
+        prev_hm_framePts = ImageTk.getimage(self.hm_framesPts[self.frame_number-1])
+
+        # save
+        save_path = Path('./paper') / tag
+        save_path.mkdir(exist_ok=True)
+        save_png(frame, save_path / 'this_frame.png')
+        save_png(hm_frame, save_path / 'hm_this_frame.png')
+        save_png(prev_frame, save_path / 'prev_frame.png')
+        save_png(prev_hm_frame, save_path / 'hm_prev_frame.png')
+
+        save_png(framePts, save_path / 'this_framePts.png')
+        save_png(hm_framePts, save_path / 'hm_this_framePts.png')
+        save_png(prev_framePts, save_path / 'prev_framePts.png')
+        save_png(prev_hm_framePts, save_path / 'hm_prev_framePts.png')
+
+        save_json(det, save_path / 'det.json')
+
+        print('clicked save')
+
+    def on_detectpts_button_click(self):
+        if self.show_mesh:
+            print('Mesh off')
+            self.show_mesh = False
+            self.update_frame(self.slice)
+        else:
+            print('Mesh on')
+            self.show_mesh = True
+            self.update_frame(self.slice)
 
     def update_time(self):
         time = self.slice / 100 * self.total_frames
@@ -131,6 +206,7 @@ class evaluation_worker:
         fval = str(self.fval)[:5]
         hval = str(self.hval)[:5]
         self.time_text.set('{} s, fval={}, hval={}'.format(str(time)[:5], fval, hval))
+        self.this_time = time
         
     def auto_next_frame(self):
         if self.autoplay:
@@ -233,32 +309,26 @@ class evaluation_worker:
     def update_frame(self, prog):
         self.frame_number = self.total_frames * prog / 100
         self.frame_number = int(self.frame_number)
-        self.image.create_image(0, 0, anchor=tk.NW, image=self.frames[self.frame_number])
-        self.image.image_tk = self.frames[self.frame_number]
+        if not self.show_mesh:
+            self.image.create_image(0, 0, anchor=tk.NW, image=self.frames[self.frame_number])
+            self.image.image_tk = self.frames[self.frame_number]
+            self.hm_image.create_image(0, 0, anchor=tk.NW, image=self.hm_frames[self.frame_number])
+            self.hm_image.image_tk = self.hm_frames[self.frame_number]
+        else:
+            self.image.create_image(0, 0, anchor=tk.NW, image=self.framesPts[self.frame_number])
+            self.image.image_tk = self.framesPts[self.frame_number]
+            self.hm_image.create_image(0, 0, anchor=tk.NW, image=self.hm_framesPts[self.frame_number])
+            self.hm_image.image_tk = self.hm_framesPts[self.frame_number]
+            
 
-        # also update the hm_image
-        self.hm_image.create_image(0, 0, anchor=tk.NW, image=self.hm_frames[self.frame_number])
-        self.hm_image.image_tk = self.hm_frames[self.frame_number]
-        # self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-        # ret, frame = self.cap.read()
-        # if ret:
-        #     # Convert the frame to RGB format
-        #     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-        #     # Convert the frame to an image object
-        #     image = Image.fromarray(frame)
-        #     image = image.resize(self.image_size)
-        #     image_tk = ImageTk.PhotoImage(image)
-            
-        #     # self.image.configure(image = image_tk)
-        #     # Update the canvas with the new image
-        #     self.image.create_image(0, 0, anchor=tk.NW, image=image_tk)
-        #     self.image.image_tk = image_tk
 
     def preload_frames(self, fpsm, args):
-        # load all frames according to the fpsm, which can be faster
+        # load all frames according to the fpsm, a bit faster
         self.frames = []
         self.hm_frames = []
+        self.framesPts = []         # frame with pts
+        self.hm_framesPts = []      # homography frames with pts
+
         nframe = 0
         idx = 0
         t = -0.033333
@@ -282,6 +352,8 @@ class evaluation_worker:
                         hm_image = warp_img(np.array(image), self.ret_H[idx])
 
                         # TODO: also paint the points?
+                        imagePts = deepcopy(image)
+                        hm_imagePts = deepcopy(hm_image)
                         for p, hp in zip(self.ret_face_mesh[idx], self.ret_face_mesh_warp[idx]):
                             # print(p)
                             # check whether nan in p and hp
@@ -290,13 +362,17 @@ class evaluation_worker:
 
                             p = [int(i) for i in p]
                             hp = [int(i) for i in hp]
-                            image = paint_line(image, p, p)
-                            hm_image = paint_line(hm_image, hp, hp)
+                            imagePts = paint_line(imagePts, p, p)
+                            hm_imagePts = paint_line(hm_imagePts, hp, hp)
 
                         image_tk = ImageTk.PhotoImage(Image.fromarray(image))
+                        imagePts_tk = ImageTk.PhotoImage(Image.fromarray(imagePts))
                         hm_image_tk = ImageTk.PhotoImage(Image.fromarray(hm_image))
+                        hm_imagePts_tk = ImageTk.PhotoImage(Image.fromarray(hm_imagePts))
                         self.frames.append(image_tk)
                         self.hm_frames.append(hm_image_tk)
+                        self.framesPts.append(imagePts_tk)
+                        self.hm_framesPts.append(hm_imagePts_tk)
                     idx = idx + 1
                 nframe = nframe + 1
                 # print(idx)

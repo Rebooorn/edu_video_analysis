@@ -2,3 +2,6 @@ videos/*
 video_outputs/*
 video_debug/*
 *.pyc
+*.png
+*.svg
+*.pdf
